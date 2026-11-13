@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente de la Secretaría - Ing. de Sistemas UNT</title>
+<style>
+  :root { --azul:#1f4e8c; --fondo:#f3f6fb; --gris:#e4e9f2; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--fondo); color:#1c2330;
+         display:flex; justify-content:center; }
+  main { width:100%; max-width:640px; height:100vh; display:flex; flex-direction:column; background:#fff; }
+  header { background:var(--azul); color:#fff; padding:14px 18px; }
+  header h1 { margin:0; font-size:1.05rem; }
+  header p { margin:2px 0 0; font-size:.8rem; opacity:.85; }
+  #mensajes { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .burbuja { max-width:85%; padding:10px 13px; border-radius:14px; line-height:1.4;
+             white-space:pre-wrap; word-wrap:break-word; }
+  .bot { background:var(--gris); align-self:flex-start; border-bottom-left-radius:4px; }
+  .yo  { background:var(--azul); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+  #sugerencias { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 8px; }
+  #sugerencias button { border:1px solid var(--azul); background:#fff; color:var(--azul);
+        border-radius:16px; padding:6px 11px; font-size:.82rem; cursor:pointer; }
+  form { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--gris); }
+  input { flex:1; padding:11px 13px; border:1px solid #c5cee0; border-radius:22px; font-size:1rem; }
+  form button { background:var(--azul); color:#fff; border:0; border-radius:22px; padding:0 20px;
+        font-size:1rem; cursor:pointer; }
+  .contacto { display:flex; flex-direction:column; gap:6px; max-width:92%; border-top:none; }
+  .contacto p { margin:0; }
+  .contacto label { font-size:.82rem; }
+  .contacto input:not([type=checkbox]) { padding:8px; border:1px solid #c5cee0; border-radius:8px; font-size:.95rem; }
+  .contacto button { background:var(--azul); color:#fff; border:0; border-radius:8px; padding:8px; cursor:pointer; }
+  .contacto button.claro { background:#fff; color:var(--azul); border:1px solid var(--azul); }
+  .contacto textarea { padding:8px; border:1px solid #c5cee0; border-radius:8px; font:inherit;
+        font-size:.95rem; resize:vertical; min-height:96px; }
+  .contacto .contador { font-size:.78rem; color:#667; text-align:right; }
+  .contacto .contador.ok { color:#1a7f37; }
+  .contacto .aviso { color:#a12; font-size:.85rem; }
+  small { text-align:center; color:#667; padding:0 16px 10px; font-size:.75rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Asistente de la Secretaría</h1>
+    <p>Escuela de Ingeniería de Sistemas · UNT</p>
+  </header>
+  <div id="mensajes" aria-live="polite"></div>
+  <div id="sugerencias">
+    {% for s in sugerencias %}<button type="button">{{ s }}</button>{% endfor %}
+  </div>
+  <form id="formulario" autocomplete="off">
+    <input id="texto" maxlength="500" placeholder="Escribe tu consulta..." aria-label="Tu consulta" required>
+    <button type="submit">Enviar</button>
+  </form>
+  <small>No escribas tu DNI ni tu código en el mensaje. Tus datos y tu consulta detallada solo se piden si quieres que la secretaría te responda.</small>
+</main>
+
+<script>
+const caja = document.getElementById("mensajes");
+const sug = document.getElementById("sugerencias");
+let ultimoTramite = null;
+const MIN_PALABRAS = 25;   // mínimo de palabras para la consulta detallada
+
+function agregar(texto, clase) {
+  const d = document.createElement("div");
+  d.className = "burbuja " + clase;
+  d.textContent = texto;          // textContent evita inyectar HTML
+  caja.appendChild(d);
+  caja.scrollTop = caja.scrollHeight;
+}
+
+async function enviar(texto) {
+  agregar(texto, "yo");
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({mensaje: texto, contexto: ultimoTramite})
+    });
+    const d = await r.json();
+    if (d.tramite) ultimoTramite = d.tramite;
+    agregar(d.respuesta || d.error, "bot");
+    if (d.derivada && d.consulta_id) mostrarFormulario(d.consulta_id);
+    if (d.sugerencias && d.sugerencias.length) {
+      agregar("Quizás te sirva:\n• " + d.sugerencias.join("\n• "), "bot");
+    }
+  } catch (e) {
+    agregar("No pude conectarme. Intenta de nuevo en un momento.", "bot");
+  }
+}
+
+function mostrarFormulario(consultaId) {
+  const f = document.createElement("form");
+  f.className = "burbuja bot contacto";
+  const texto = document.createElement("p");
+  texto.textContent = "Si quieres que la secretaría te responda por correo, escribe tu consulta completa " +
+                      "y deja tus datos. Solo se usarán para responder tu consulta.";
+  const nombre = document.createElement("input");
+  nombre.placeholder = "Nombre completo"; nombre.maxLength = 100; nombre.required = true;
+  const correo = document.createElement("input");
+  correo.type = "email"; correo.placeholder = "Correo institucional";
+  correo.maxLength = 100; correo.required = true;
+  const codigo = document.createElement("input");
+  codigo.placeholder = "Código de estudiante (10 dígitos)"; codigo.maxLength = 10;
+  codigo.inputMode = "numeric"; codigo.pattern = "[0-9]{10}"; codigo.required = true;
+  const detalle = document.createElement("textarea");
+  detalle.placeholder = "Escribe tu consulta con detalle: explica qué necesitas, tu situación " +
+                        "y cualquier dato que ayude a la secretaría a responderte (mínimo " + MIN_PALABRAS + " palabras).";
+  detalle.maxLength = 1500; detalle.required = true; detalle.rows = 5;
+  detalle.setAttribute("aria-label", "Tu consulta detallada");
+  const contador = document.createElement("div"); contador.className = "contador";
+  const contarPalabras = () => detalle.value.trim() ? detalle.value.trim().split(/\s+/).length : 0;
+  const actualizarContador = () => {
+    const n = contarPalabras();
+    contador.textContent = n + " / " + MIN_PALABRAS + " palabras" + (n >= MIN_PALABRAS ? " ✓" : " (mínimo)");
+    contador.classList.toggle("ok", n >= MIN_PALABRAS);
+  };
+  detalle.addEventListener("input", actualizarContador);
+  actualizarContador();
+  const etiqueta = document.createElement("label");
+  const acepto = document.createElement("input");
+  acepto.type = "checkbox"; acepto.required = true;
+  etiqueta.append(acepto, " Acepto que la secretaría use mis datos para responderme.");
+  const aviso = document.createElement("div"); aviso.className = "aviso";
+  const enviarBtn = document.createElement("button"); enviarBtn.textContent = "Enviar a la secretaría";
+  const noBtn = document.createElement("button");
+  noBtn.type = "button"; noBtn.textContent = "No, gracias"; noBtn.className = "claro";
+  noBtn.onclick = () => f.remove();
+  f.append(texto, nombre, correo, codigo, detalle, contador, etiqueta, aviso, enviarBtn, noBtn);
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (contarPalabras() < MIN_PALABRAS) {
+      aviso.textContent = "Explica tu consulta con al menos " + MIN_PALABRAS + " palabras (ahora tienes " + contarPalabras() + ").";
+      detalle.focus();
+      return;
+    }
+    aviso.textContent = "";
+    try {
+      const r = await fetch("/api/contacto", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({consulta_id: consultaId, nombre: nombre.value,
+                              correo: correo.value, codigo: codigo.value,
+                              detalle: detalle.value,
+                              acepto: acepto.checked})
+      });
+      const d = await r.json();
+      if (r.ok) { f.remove(); agregar(d.mensaje, "bot"); }
+      else { aviso.textContent = d.error; }      // el formulario se queda para corregir
+    } catch (err) {
+      aviso.textContent = "No pude conectarme. Intenta de nuevo.";
+    }
+  });
+  caja.appendChild(f);
+  caja.scrollTop = caja.scrollHeight;
+}
+
+document.getElementById("formulario").addEventListener("submit", e => {
+  e.preventDefault();
+  const t = document.getElementById("texto");
+  const valor = t.value.trim();
+  if (!valor) return;
+  t.value = "";
+  sug.style.display = "none";
+  enviar(valor);
+});
+
+sug.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+  sug.style.display = "none";
+  enviar(b.textContent);
+}));
+
+agregar("¡Hola! Soy el asistente de la secretaría. Pregúntame por matrícula, constancias, " +
+        "retiros, certificados, titulación u horarios.", "bot");
+</script>
+</body>
+</html>

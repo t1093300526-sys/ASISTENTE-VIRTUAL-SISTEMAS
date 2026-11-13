@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel de la secretaría</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin:0; background:#f3f6fb; color:#1c2330; }
+  .contenedor { max-width:960px; margin:0 auto; padding:20px; }
+  h1 { color:#1f4e8c; } h2 { margin-top:32px; font-size:1.1rem; }
+  .tarjetas { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .tarjeta { background:#fff; border-radius:10px; padding:12px; box-shadow:0 1px 3px #0001; }
+  .tarjeta b { display:block; font-size:1.4rem; color:#1f4e8c; }
+  table { width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #e4e9f2; font-size:.9rem; }
+  form.linea { display:inline; }
+  label { display:block; margin-top:10px; font-weight:600; font-size:.9rem; }
+  input, select, textarea { width:100%; padding:8px; border:1px solid #c5cee0; border-radius:6px; font:inherit; }
+  button, .boton { background:#1f4e8c; color:#fff; border:0; border-radius:6px; padding:7px 12px;
+         cursor:pointer; text-decoration:none; font-size:.85rem; display:inline-block; }
+  .claro { background:#e4e9f2; color:#1c2330; }
+  .detalle { margin-top:6px; padding:8px; background:#f3f6fb; border-radius:6px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<div class="contenedor">
+  <h1>Panel de la secretaría</h1>
+
+  <h2>Resumen</h2>
+  <div class="tarjetas">
+    <div class="tarjeta"><b>{{ est.total }}</b>consultas totales</div>
+    <div class="tarjeta"><b>{{ est.por_asistente }}</b>resueltas por el asistente ({{ est.porcentaje }}%)</div>
+    <div class="tarjeta"><b>{{ est.derivadas }}</b>derivadas a secretaría</div>
+    <div class="tarjeta"><b>{{ est.media if est.media is not none else '-' }}</b>tiempo medio (ms)</div>
+    <div class="tarjeta"><b>{{ est.mediana if est.mediana is not none else '-' }}</b>mediana (ms)</div>
+    <div class="tarjeta"><b>{{ est.moda if est.moda is not none else '-' }}</b>moda (ms)</div>
+  </div>
+  <p>
+    <strong>Trámites más consultados:</strong>
+    {% for nombre, n in est.top %}{{ nombre }} ({{ n }}){% if not loop.last %}, {% endif %}{% else %}aún no hay datos{% endfor %}
+  </p>
+  <a class="boton claro" href="{{ url_for('exportar') }}">Descargar consultas (CSV)</a>
+
+  <h2>Consultas que el asistente no entendió ({{ pendientes|length }})</h2>
+  <table>
+    <tr><th>Fecha</th><th>Mensaje</th><th>Contacto</th><th></th></tr>
+    {% for p in pendientes %}
+    <tr>
+      <td>{{ p.fecha }}</td>
+      <td>{{ p.mensaje }}{% if p.detalle %}<div class="detalle"><b>Consulta detallada:</b><br>{{ p.detalle }}</div>{% endif %}</td>
+      <td>{% if p.correo %}{{ p.nombre }}<br>{{ p.correo }}<br>Código: {{ p.codigo }}<br>
+        <a href="mailto:{{ p.correo }}?subject={{ 'Respuesta a tu consulta en la secretaría'|urlencode }}">Responder por correo</a>
+        {% else %}<em>Sin contacto</em>{% endif %}</td>
+      <td><form class="linea" method="post" action="{{ url_for('marcar_atendida', consulta_id=p.id) }}">
+        <button class="claro">Marcar atendida</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="4">No hay consultas pendientes.</td></tr>{% endfor %}
+  </table>
+  <h2>Lo que más se repite y el asistente no entendió</h2>
+  <table>
+    <tr><th>Consulta</th><th>Veces</th></tr>
+    {% for f in frecuentes %}
+    <tr><td>{{ f.texto }}</td><td>{{ f.veces }}</td></tr>
+    {% else %}<tr><td colspan="2">Aún no hay datos.</td></tr>{% endfor %}
+  </table>
+  <h2>Agregar pregunta frecuente</h2>
+  <form method="post" action="{{ url_for('agregar_faq') }}">
+    <label>Trámite
+      <select name="tramite_id">
+        <option value="">(sin trámite)</option>
+        {% for t in tramites %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}
+      </select></label>
+    <label>Pregunta <input name="pregunta" required></label>
+    <label>Palabras clave (separadas por coma) <input name="claves" required
+           placeholder="matricula, requisitos, documentos"></label>
+    <label>Respuesta <textarea name="respuesta" rows="4" required></textarea></label>
+    <p><button>Guardar</button></p>
+  </form>
+
+  <h2>Preguntas frecuentes ({{ faqs|length }})</h2>
+  <table>
+    <tr><th>Trámite</th><th>Pregunta</th><th>Estado</th><th></th></tr>
+    {% for f in faqs %}
+    <tr>
+      <td>{{ f.tramite or '-' }}</td><td>{{ f.pregunta }}</td>
+      <td>{{ 'Activa' if f.activa else 'Desactivada' }}</td>
+      <td><form class="linea" method="post" action="{{ url_for('alternar_faq', faq_id=f.id) }}">
+        <button class="claro">{{ 'Desactivar' if f.activa else 'Activar' }}</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+</body>
+</html>
