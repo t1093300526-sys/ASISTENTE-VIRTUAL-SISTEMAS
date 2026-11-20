@@ -21,6 +21,7 @@ import database
 from chatbot import responder
 
 app = Flask(__name__)
+database.init_db()
 
 
 # ---------- Seguridad: panel solo para personal autorizado ----------
