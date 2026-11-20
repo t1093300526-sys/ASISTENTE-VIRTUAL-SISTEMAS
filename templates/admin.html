@@ -28,9 +28,10 @@
 
   <h2>Resumen</h2>
   <div class="tarjetas">
-    <div class="tarjeta"><b>{{ est.total }}</b>consultas totales</div>
+    <div class="tarjeta"><b>{{ est.total }}</b>consultas académicas</div>
     <div class="tarjeta"><b>{{ est.por_asistente }}</b>resueltas por el asistente ({{ est.porcentaje }}%)</div>
     <div class="tarjeta"><b>{{ est.derivadas }}</b>derivadas a secretaría</div>
+    <div class="tarjeta"><b>{{ est.sociales }}</b>saludos y charla (no cuentan en el %)</div>
     <div class="tarjeta"><b>{{ est.media if est.media is not none else '-' }}</b>tiempo medio (ms)</div>
     <div class="tarjeta"><b>{{ est.mediana if est.mediana is not none else '-' }}</b>mediana (ms)</div>
     <div class="tarjeta"><b>{{ est.moda if est.moda is not none else '-' }}</b>moda (ms)</div>

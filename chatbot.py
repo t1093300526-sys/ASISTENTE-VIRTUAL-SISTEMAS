@@ -7,20 +7,30 @@ Procesamiento de lenguaje natural (NLP) sencillo, sin librerías pesadas:
   4. Comparar con las palabras clave de cada pregunta frecuente,
      tolerando errores de ortografía ("matrikula" -> "matricula").
 Si ninguna pregunta se parece lo suficiente, la consulta se deriva a la secretaría.
+
+Antes de buscar en las preguntas frecuentes se revisa si el mensaje es solo charla social
+(saludos, despedidas, gracias, "¿qué hora es?"...): eso vive en intenciones.py.
 """
 import os
-import re
 import time
-import unicodedata
 from difflib import SequenceMatcher
 
 import database
+import intenciones
+from intenciones import palabras  # normaliza el texto (minúsculas, sin tildes, separado en palabras)
 
 UMBRAL = 1.0          # puntaje mínimo para considerar que entendió la consulta
 PESO_CLAVE = 1.0      # una palabra clave pesa más...
 PESO_PREGUNTA = 0.4   # ...que una palabra que solo aparece en la pregunta
 TOLERANCIA = 0.85     # parecido mínimo para aceptar una palabra mal escrita
 BONUS_CONTEXTO = 0.6  # ventaja para el trámite del que se venía hablando
+# Frases que piden ampliar el tema del que se venía hablando
+MAS_INFO = {"informacion", "info", "detalle", "detalles", "mas", "más","ampliar",
+            "continuar", "seguir", "cuentame", "explicame"}
+
+
+def pide_mas(crudas):
+    return len(crudas) <= 8 and any(p in MAS_INFO for p in crudas)
 
 # Palabras que significan lo mismo: todas se convierten en "costo"
 SINONIMOS = {
@@ -36,25 +46,6 @@ PALABRAS_VACIAS = {
     "necesito", "puedo", "hago", "hacer", "saber", "sobre", "favor", "podria",
     "puede", "pueden", "tengo", "tiene", "ser", "si", "no", "muy", "mas", "ya",
 }
-
-SALUDOS = {"hola", "buenas", "buenos", "dias", "tardes", "noches", "hey", "saludos", "que", "tal"}
-DESPEDIDAS = {"gracias", "muchas", "ok", "vale", "listo", "chau", "adios", "hasta", "luego", "genial"}
-PEDIR_AYUDA = {"ayuda", "menu", "opciones", "temas"}
-# Charla casual: lista CERRADA. Solo cuenta si TODO el mensaje es una de estas frases.
-# No se filtra por largo: una palabra suelta como "beca" sí llega a la secretaría.
-CHARLA = [
-    {"como", "estas"}, {"como", "te", "va"}, {"como", "te", "llamas"},
-    {"quien", "eres"}, {"que", "eres"}, {"que", "haces"},
-    {"eres", "robot"}, {"eres", "un", "robot"}, {"eres", "real"},
-    {"todo", "bien"}, {"bien", "y", "tu"},
-    {"jaja"}, {"jajaja"}, {"jeje"}, {"xd"},
-]
-
-def palabras(texto):
-    """Minúsculas, sin tildes y separado en palabras."""
-    texto = unicodedata.normalize("NFD", texto.lower())
-    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
-    return re.findall(r"[a-zñ0-9]+", texto)
 
 
 def raiz(palabra):
@@ -113,6 +104,7 @@ def _resultado(respuesta, inicio, **extra):
     base = {
         "respuesta": respuesta, "faq_id": None, "tramite": None,
         "reconocida": True, "derivada": False, "sugerencias": [],
+        "tipo": "faq",   # faq = respondida con una pregunta frecuente | social = charla | derivada
     }
     base.update(extra)
     base["tiempo_ms"] = round((time.perf_counter() - inicio) * 1000, 2)
@@ -122,41 +114,47 @@ def _resultado(respuesta, inicio, **extra):
 def responder(mensaje, faqs=None, contexto=None):
     inicio = time.perf_counter()
     faqs = _faqs_activas() if faqs is None else faqs
-    crudas = set(palabras(mensaje))
+    crudas = palabras(mensaje)
 
-    # Saludos, despedidas y pedidos de ayuda
-    if crudas and crudas <= SALUDOS:
-        return _resultado("¡Hola! Soy el asistente de la secretaría de Ingeniería de Sistemas. "
-                          "Pregúntame por matrícula, constancias, retiros, certificados, "
-                          "titulación u horarios.", inicio)
-    if crudas and crudas <= DESPEDIDAS:
-        return _resultado("¡Con gusto! Si tienes otra duda, aquí estaré.", inicio)
-    if crudas in CHARLA or (crudas - SALUDOS) in CHARLA:
-        return _resultado("¡Todo bien, gracias! Soy el asistente virtual de la secretaría. "
-                          "Pregúntame por matrícula, constancias, retiros, certificados, "
-                          "titulación u horarios.", inicio)
+    if not crudas:      # solo símbolos o emojis
+        return _resultado("No pude leer tu mensaje. Escribe tu consulta con palabras, por favor.",
+                          inicio, tipo="social")
 
+    # 1) Charla social: saludos, despedidas, gracias, "¿qué hora es?"... (ver intenciones.py)
+    sociales, es_pura = intenciones.detectar(crudas)
+    if es_pura:
+        texto, sugerencias = intenciones.responder_social(sociales, crudas, faqs)
+        return _resultado(texto, inicio, sugerencias=sugerencias, tipo="social")
+
+    # 2) Consulta académica: se busca la pregunta frecuente más parecida
     mt = tokens(mensaje)
     puntajes = sorted(((puntuar(mt, f, contexto), f) for f in faqs), key=lambda x: -x[0])
     if puntajes and puntajes[0][0] >= UMBRAL:
         mejor = puntajes[0][1]
         return _resultado(mejor["respuesta"], inicio,
                           faq_id=mejor["id"], tramite=mejor["tramite"])
+    # 2b) Pidió "más información": se le muestran los demás temas del mismo trámite
+    if contexto and pide_mas(crudas):
+        preguntas = [f["pregunta"] for f in faqs if f["tramite"] == contexto]
+        if preguntas:
+            texto = (f"Sobre «{contexto}» puedes preguntarme, por ejemplo:\n• "
+                     + "\n• ".join(preguntas[:8])
+                     + "\nEscribe la que te interese.")
+            return _resultado(texto, inicio, tramite=contexto)
 
-    if crudas & PEDIR_AYUDA:
-        temas = sorted({f["tramite"] for f in faqs if f["tramite"]})
-        return _resultado("Puedo ayudarte con: " + ", ".join(temas) + ". "
-                          "Escribe tu pregunta con tus palabras.", inicio,
-                          sugerencias=[f["pregunta"] for f in faqs[:5]])
+    # 3) Pidió ayuda dentro de una frase que no se entendió: se muestran los temas
+    if "ayuda" in sociales:
+        texto, sugerencias = intenciones.INTENCIONES["ayuda"]["respuesta"](crudas, faqs)
+        return _resultado(texto, inicio, sugerencias=sugerencias, tipo="social")
 
-    # No entendió: se deriva a la secretaría
+    # 4) No entendió: se deriva a la secretaría
     contacto = os.environ.get("CONTACTO_SECRETARIA", "la secretaría de la escuela")
-    cercanas = [f["pregunta"] for p, f in puntajes[:3] if p > 0]
+    cercanas = [f["pregunta"] for p, f in puntajes[:3] if p >= 0.8]
     return _resultado(
         "No logré entender bien tu consulta. ¿Qué trámite o consulta quieres realizar? "
         "Puedes escribirla con más detalle. También puedes escribir tu consulta completa "
         "(mínimo 25 palabras) y dejar tu nombre, correo institucional y código aquí abajo; "
         "la secretaría te responderá por correo. "
         f"Si es urgente, comunícate directamente con {contacto}.",
-        inicio, reconocida=False, derivada=True, sugerencias=cercanas,
+        inicio, reconocida=False, derivada=True, sugerencias=cercanas, tipo="derivada",
     )

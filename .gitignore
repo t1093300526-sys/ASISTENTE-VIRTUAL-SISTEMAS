@@ -2,3 +2,4 @@ respaldos/
 token.json
 credentials.json
 __pycache__/
+asistente.db

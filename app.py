@@ -27,7 +27,7 @@ app = Flask(__name__)
 def requiere_admin(vista):
     @wraps(vista)
     def protegida(*args, **kwargs):
-        clave = "MICLAVE2026"
+        clave = os.environ.get("ADMIN_PASSWORD")
         if not clave:
             return Response("Panel desactivado: define la variable ADMIN_PASSWORD.", 503)
         usuario = os.environ.get("ADMIN_USER", "secretaria")
@@ -69,10 +69,10 @@ def chat():
     r = responder(mensaje, contexto=contexto)
     with database.conexion() as c:
         cur = c.execute(
-            "INSERT INTO consultas (fecha, mensaje, faq_id, reconocida, derivada, tiempo_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO consultas (fecha, mensaje, faq_id, reconocida, derivada, tiempo_ms, tipo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (datetime.now().isoformat(timespec="seconds"), ocultar_datos_personales(mensaje),
-             r["faq_id"], int(r["reconocida"]), int(r["derivada"]), r["tiempo_ms"]),
+             r["faq_id"], int(r["reconocida"]), int(r["derivada"]), r["tiempo_ms"], r["tipo"]),
         )
         consulta_id = cur.lastrowid
     return jsonify(respuesta=r["respuesta"], sugerencias=r["sugerencias"],
@@ -130,19 +130,23 @@ def contacto():
 # ---------- Panel de la secretaria ----------
 def calcular_estadisticas():
     with database.conexion() as c:
-        total = c.execute("SELECT COUNT(*) FROM consultas").fetchone()[0]
+        # Solo cuentan las consultas académicas: los saludos, despedidas y la charla
+        # (tipo = 'social') no se suman, para que el % resuelto no se infle.
         por_asistente = c.execute(
-            "SELECT COUNT(*) FROM consultas WHERE reconocida = 1").fetchone()[0]
+            "SELECT COUNT(*) FROM consultas WHERE tipo = 'faq'").fetchone()[0]
         derivadas = c.execute(
-            "SELECT COUNT(*) FROM consultas WHERE derivada = 1").fetchone()[0]
+            "SELECT COUNT(*) FROM consultas WHERE tipo = 'derivada'").fetchone()[0]
+        sociales = c.execute(
+            "SELECT COUNT(*) FROM consultas WHERE tipo = 'social'").fetchone()[0]
+        total = por_asistente + derivadas
         tiempos = [r[0] for r in c.execute(
-            "SELECT tiempo_ms FROM consultas WHERE tiempo_ms IS NOT NULL")]
+            "SELECT tiempo_ms FROM consultas WHERE tiempo_ms IS NOT NULL AND tipo != 'social'")]
         top = c.execute(
             "SELECT t.nombre, COUNT(*) n FROM consultas q "
             "JOIN preguntas_frecuentes f ON f.id = q.faq_id "
             "JOIN tramites t ON t.id = f.tramite_id "
             "GROUP BY t.nombre ORDER BY n DESC LIMIT 5").fetchall()
-    est = {"total": total, "por_asistente": por_asistente, "derivadas": derivadas,
+    est = {"total": total, "por_asistente": por_asistente, "derivadas": derivadas, "sociales": sociales,
            "porcentaje": round(100 * por_asistente / total, 1) if total else 0,
            "top": [(r["nombre"], r["n"]) for r in top],
            "media": None, "mediana": None, "moda": None}
@@ -209,10 +213,10 @@ def exportar():
     escritor = csv.writer(salida)
     with database.conexion() as c:
         filas = c.execute(
-            "SELECT id, fecha, mensaje, faq_id, reconocida, derivada, tiempo_ms, "
+            "SELECT id, fecha, mensaje, faq_id, tipo, reconocida, derivada, tiempo_ms, "
             "atendida_secretaria FROM consultas ORDER BY id").fetchall()
         escritor.writerow(filas[0].keys() if filas else
-                          ["id", "fecha", "mensaje", "faq_id", "reconocida", "derivada",
+                          ["id", "fecha", "mensaje", "faq_id", "tipo", "reconocida", "derivada",
                            "tiempo_ms", "atendida_secretaria"])
         escritor.writerows([tuple(f) for f in filas])
     return Response("﻿" + salida.getvalue(), mimetype="text/csv",
@@ -220,6 +224,7 @@ def exportar():
 
 
 if __name__ == "__main__":
-    database.init_db()
+    nuevas, actualizadas = database.init_db()
+    print(f"Preguntas cargadas desde database.py -> nuevas: {nuevas}, actualizadas: {actualizadas}")
     # Solo en tu red local; para el piloto usa un servidor como waitress
     app.run(host="127.0.0.1", port=5000, debug=False)
