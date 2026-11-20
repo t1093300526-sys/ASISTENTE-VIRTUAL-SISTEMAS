@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS preguntas_frecuentes (
     activa         INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS intentos_admin (
+    usuario       TEXT PRIMARY KEY,
+    fallos        INTEGER NOT NULL DEFAULT 0,
+    etapa         INTEGER NOT NULL DEFAULT 0,
+    bloqueado_hasta REAL NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS consultas (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha               TEXT NOT NULL,
@@ -97,6 +104,16 @@ TRAMITES = [
     ("Carné universitario", "Solicitud, costo, pago, duplicado y convocatorias del carné universitario"),
 ]
 
+# Tarifas: la tabla corresponde al cronograma 2024-II. Los importes extra
+# (FUT y constancia) fueron comunicados por el usuario y requieren confirmación.
+# Se considera que FUT S/ 10 y derecho de trámite S/ 10 son UN SOLO cargo.
+# La matrícula ordinaria (S/ 71.10 en esa tabla) no está incluida.
+COSTOS_REPETICION = {
+    "segunda": (48.50, 151.00),
+    "tercera": (97.00, 199.50),
+    "cuarta": (145.00, 247.50),
+}
+
 # (trámite, pregunta, palabras clave separadas por coma, respuesta)
 PREGUNTAS = [
     ("Matrícula", "¿Cuáles son los requisitos para matricularme?",
@@ -109,16 +126,50 @@ PREGUNTAS = [
      "Las fechas de matrícula las define el calendario académico: \nPara el año 2027, todavia no está definido\n(Volver a consultar en marzo de 2027.). "
      "\nTe recomendamos no dejarlo para el último día."),
     ("Matrícula", "¿Cuánto cuesta la matrícula?",
-     "matricula, costo, precio, cuanto, cuesta, pagar, pago, tarifa, monto",
+     "matricula, costo, precio, cuesta, pagar, pago, tarifa, monto",
      "El costo de la matrícula es Pago (Interbank):\n1.Nuevo ingreso: S/ 75.80\n2.Ciclo regular impar (1°, 3°, 5°, 7°, 9°): S/ 53.30\n3.Ciclo regular par (2°, 4°, 6°, 8°, 10°): S/ 47.30."),
+    ("Matrícula", "¿Cuánto debo pagar por llevar un curso por segunda matrícula?",
+     "segunda matricula, segundo intento, segunda vez, repetir segunda, curso repeticion, costo segunda, pago segunda",
+     "Según el cuadro de tasas UNT 2024-II, para llevar un curso por segunda vez se considera:\n"
+     "1. Curso de repetición: S/ 72.50.\n2. Segunda matrícula: S/ 48.50.\n"
+     "Gastos adicionales comunicados para el trámite: FUT o derecho de trámite S/ 10.00 y constancia S/ 20.00.\n"
+     "Total estimado: S/ 151.00. No incluye la matrícula ordinaria ni otros posibles derechos. "
+     "Los S/ 30 adicionales y la vigencia actual deben confirmarse en secretaría."),
+    ("Matrícula", "¿Cuánto debo pagar por llevar un curso por tercera matrícula?",
+     "tercera matricula, tercer intento, tercera vez, repetir tercera, curso repeticion, costo tercera, pago tercera",
+     "Según el cuadro de tasas UNT 2024-II, para llevar un curso por tercera vez se considera:\n"
+     "1. Curso de repetición: S/ 72.50.\n2. Tercera matrícula: S/ 97.00.\n"
+     "Gastos adicionales comunicados para el trámite: FUT o derecho de trámite S/ 10.00 y constancia S/ 20.00.\n"
+     "Total estimado: S/ 199.50. No incluye la matrícula ordinaria ni otros posibles derechos. "
+     "Los S/ 30 adicionales y la vigencia actual deben confirmarse en secretaría."),
+    ("Matrícula", "¿Cuánto debo pagar por llevar un curso por cuarta matrícula?",
+     "cuarta matricula, cuarto intento, cuarta vez, repetir cuarta, curso repeticion, costo cuarta, pago cuarta",
+     "Según el cuadro de tasas UNT 2024-II, para llevar un curso por cuarta vez se considera:\n"
+     "1. Curso de repetición: S/ 72.50.\n2. Cuarta matrícula: S/ 145.00.\n"
+     "Gastos adicionales comunicados para el trámite: FUT o derecho de trámite S/ 10.00 y constancia S/ 20.00.\n"
+     "Total estimado: S/ 247.50. No incluye la matrícula ordinaria ni otros posibles derechos. "
+     "Los S/ 30 adicionales y la vigencia actual deben confirmarse en secretaría."),
+    ("Matrícula", "¿Cómo se calcula el pago de un curso repetido en segunda, tercera o cuarta matrícula?",
+     "costos repetir curso, pagos repeticion, segunda tercera cuarta, tarifas repeticion, matriculas repetidas, costo repeticion",
+     "El pago estimado se calcula sumando el curso de repetición (S/ 72.50) + el derecho según el número de matrícula "
+     "(segunda S/ 48.50; tercera S/ 97.00; cuarta S/ 145.00) + un FUT/derecho de trámite "
+     "(S/ 10.00) + una constancia (S/ 20.00).\n"
+     "Totales estimados: segunda S/ 151.00; tercera S/ 199.50; cuarta S/ 247.50. "
+     "No incluye matrícula ordinaria. Tarifas del cuadro 2024-II; confirma la vigencia y los cargos adicionales en secretaría."),
+    ("Matrícula", "¿Cuánto cuestan el FUT y la constancia para repetir un curso?",
+     "fut, formato unico tramite, derecho tramite, constancia repetir, costo fut, costo constancia repeticion",
+     "Para el trámite de un curso repetido, se han comunicado estos gastos adicionales: "
+     "FUT o derecho de trámite: S/ 10.00 y constancia: S/ 20.00; en conjunto S/ 30.00. "
+     "El FUT y el derecho de trámite se cuentan aquí como un solo cargo de S/ 10. "
+     "Estos montos no aparecen desglosados en el cuadro 2024-II; confirma con secretaría si siguen aplicando."),
     ("Constancias", "¿Cómo solicito una constancia de estudios?",
-     "constancia, constancias, estudios, estudiante, solicitar, solicito, pedir",
+     "constancia, constancias, estudios, estudiante, solicitar, solicito, pedir, informacion",
      "Para pedir tu constancia se necesita ingresar a la pagina web: https://tramites-uraa.unitru.edu.pe/sign-in"
     "\nAllí deberás crearte una cuenta con tu correo institucional o ingresar si ya tienes una"
     "\nDespués deberás ingresar al apartado de registrar tramite, seleccionar 'CONSTANCIA' y rellenar los datos que se necesitan."),
     ("Constancias", "¿Cuánto demora y cuánto cuesta la constancia?",
      "constancia, constancias, demora, demoran, tiempo, cuanto, costo, cuesta, entrega, recoger",
-     "Todas las solicitudes serán recepcionadas y trabajadas de Lunes a Viernes de 08:00hrs. a 14:00hrs, excepto días declarados como feriado público. "
+     "Todas las solicitudes de constancias serán recepcionadas y trabajadas de Lunes a Viernes de 08:00hrs. a 14:00hrs, excepto días declarados como feriado público. "
      "\nTodos los trámites fuera del horario en mención serán considerados el próximo día hábil. "
      "\nEl costo es de 15 soles y se realiza de manera bancaria en los medios que se encuentran en la plataforma."
      "\nUna vez terminado el proceso, se recoge en la oficina de la secretaría de Ing. de Sistemas."),
@@ -139,7 +190,7 @@ PREGUNTAS = [
      "\n3.Comprobante de Pago: Pago del derecho de trámite por reserva de matrícula."
      "\n4.No presentar deudas."),
     ("Certificados y convalidación", "¿Cómo pido el certificado de estudios?",
-     "certificado, certificados, notas, historial, record",
+     "certificado, certificados, notas, historial, record, pido",
      "Para pedir el certificado de estudios debes ingresar a la página web: https://uraa.unitru.edu.pe/procedure"
      "\nPosteriormente debes ir al apartado de certificado de estudios, donde hay un manual interactivo que indica los procesos paso a paso que deberás realizar para ello."),
     ("Certificados y convalidación", "¿Cómo convalido cursos?",
@@ -165,7 +216,7 @@ PREGUNTAS = [
      "\nSedes y horarios de atención: CIUDAD UNIVERSITARIA Lunes a Viernes de 07:00 a 14:45."
      "\nConsulta sobre el procedimiento: 474-839 Fac. Ingenieria "),
     ("Titulacion", "¿Cuáles son los pasos para titularme?",
-     "titulacion, titularme, titular, titulo, tesis, profesional, decano",
+     "titulacion, titularme, titular, titulo, tesis, profesional, decano, costo, cuanto",
      "Los pasos para el titulo profesional son:"
      "\n1.Solicitud dirigida al Decano (Formato de solicitud múltiple incluido en carpeta)"
      "\n2.Una foto a color, en fondo blanco, reciente, tamaño pasaporte. (caballeros: con saco, camisa y corbata: damas con traje de vestir)."
@@ -545,6 +596,11 @@ PREGUNTAS = [
      "incorporación al mercado laboral; para ello el estudiante debe elaborar y sustentar un proyecto que "
      "demuestre la competencia alcanzada.\n"
      "Consulta con tu Escuela si tu plan de estudios está organizado por módulos."),
+     ("Régimen de estudios y créditos", "¿Qué cursos se llevan en la carrera de Ingeniería de Sistemas?",
+        "información, informes, cursos, curso, asignaturas, materias, malla curricular, plan de estudios, cursos de ingeniería de sistemas, ciclos académicos",
+            "Para conocer los cursos que se llevan durante la carrera de Ingeniería de Sistemas, le recomendamos consultar la malla curricular, "
+            "donde podrá visualizar las asignaturas correspondientes a cada ciclo académico:"
+            "\nhttps://admisionunt.info/docs/ingenieriasistemas.pdf"),
     ("Evaluación académica", "¿Cuál es la nota mínima para aprobar un curso?",
      "nota minima, curso, aprobar, apruebo, aprueba, aprobado, aprobada, aprobatoria, aprobatorio, catorce, 14, vigesimal",
      "La nota mínima aprobatoria en la UNT es catorce (14). El sistema de calificación es vigesimal, de 0 "
@@ -684,13 +740,13 @@ PREGUNTAS = [
 
     # ======== Bachiller y certificado (PDF de la escuela) ========
     ("Titulacion", "¿Cuánto cuesta el bachiller?",
-     "bachiller, grado, costo, cuanto, carpeta, derecho, bachillerato",
+     "bachiller, grado, costo, cuanto, carpeta, derecho, bachillerato, cuesta",
      "Para el grado de bachiller hay dos pagos:\n"
      "1.Carpeta de bachiller: S/ 200.00 (Tesorería o Cta. Cte. Interbank).\n"
      "2.Derecho de bachillerato: S/ 223.90 (Interbank, código de servicio 005-186-17).\n"
      "Si tienes dudas sobre cuál aplica a tu caso, confirma en la secretaría."),
     ("Titulacion", "¿Qué documentos presento en la carpeta para obtener el grado de bachiller?",
-     "carpeta, bachiller, grado, documentos, requisitos, presentar, mesa, partes, decanato, obtener",
+     "carpeta, titularme, titulacion, grado, documentos, requisitos, presentar, mesa, partes, decanato, obtener, costo, cuesta",
      "Presenta la carpeta en Mesa de Partes de Decanato (presencial o por correo a mesadepartes_ingenieria@unitru.edu.pe) con:\n"
      "1.Formato de Grado de Bachiller (viene en la carpeta), debidamente llenado.\n"
      "2.Voucher de pago (S/ 200.00).\n"
@@ -699,13 +755,13 @@ PREGUNTAS = [
      "5.Una foto tamaño pasaporte con logo UNT, tomada en el estudio fotográfico de la UNT.\n"
      "6.Constancia de no adeudo (se solicita en Biblioteca)."),
     ("Titulacion", "¿Cómo saco la constancia de no adeudo?",
-     "constancia, adeudo, deuda, biblioteca, adeudar",
+     "adeudo, deuda, biblioteca, adeudar",
      "La constancia de no adeudo se solicita en Biblioteca. Contacto: Sr. Valerio Ynfantes, 940643220."),
     ("Certificados y convalidación", "¿Cuánto cuesta el certificado de estudios?",
-     "certificado, costo, cuanto, pago, pagar",
+     "certificado, estudios costo, cuanto, pago, pagar",
      "El certificado de estudios cuesta S/ 75.00. Se paga en Tesorería (local central) o en la Cta. Cte. Interbank (código de servicio 005-166-17)."),
     ("Certificados y convalidación", "¿Qué necesito para registrar mi trámite de certificado de estudios?",
-     "certificado, requisitos, registrar, registro, documentos, adjuntar, voucher, operacion",
+     "certificado, requisitos, registrar, registro, documentos, adjuntar, voucher, operacion, estudios, informacion",
      "En el formulario de registro debes ingresar:\n"
      "1.Tus datos personales, la Facultad y la Escuela.\n"
      "2.El motivo (solicita certificado digital de estudios).\n"

@@ -81,3 +81,14 @@ CSV para hacer la comparación antes/después en Excel o SPSS.
   `waitress-serve --host=0.0.0.0 --port=5000 app:app` (y protege el acceso a la red).
 - Si quieres usar NLTK, como en Ndunagu et al. (2025), puedes cambiar `tokens()` en
   `chatbot.py` por su lematizador sin tocar el resto.
+
+
+## Actualización: repetición de cursos y seguridad del panel
+
+Se añadieron cinco preguntas frecuentes en `database.py` sobre segunda, tercera y cuarta matrícula, el cálculo del pago y el FUT/constancia. El cuadro utilizado está fechado **2024-II**: los importes por repetición provienen de esa tabla; los S/ 10 (FUT o derecho de trámite, contados una sola vez) y S/ 20 (constancia) fueron aportados como información adicional y deben confirmarse con secretaría. Los totales no incluyen la matrícula ordinaria.
+
+El panel `/admin` conserva el acceso HTTP Basic mediante `ADMIN_USER` (por defecto `secretaria`) y `ADMIN_PASSWORD` (obligatoria). Se añadió `seguridad.py`: tras **5** claves erróneas hay **1 minuto** de bloqueo; después se conceden **3 intentos** y hay **5 minutos** de bloqueo; luego **1 intento** y **15 minutos**; desde entonces se aplica **1 hora** por intento fallido. El contador queda guardado en SQLite (`intentos_admin`) y se borra tras un inicio de sesión válido. No se modifica la contraseña ni se guarda en la base de datos. Durante el bloqueo la respuesta HTTP es 429 con `Retry-After`; el navegador puede mostrar un error en lugar de un temporizador.
+
+**Importante:** el bloqueo es de la cuenta completa, por lo que una persona malintencionada también podría impedir temporalmente el acceso a la secretaría. Es mitigación básica contra intentos de contraseña, no una solución integral para publicar la app en Internet. Usa HTTPS, contraseña larga y única, copias de seguridad y, preferentemente, MFA y un sistema de sesión. Un flujo de recuperación por correo no está incluido: requiere correo verificado de la secretaría, tokens de un solo uso con caducidad y un servicio de envío. Con HTTP Basic no conviene improvisar esa función.
+
+Para actualizar las preguntas de una base existente, conserva tu `asistente.db` original en la carpeta del proyecto y ejecuta `python database.py` (se sincronizan sin borrar consultas). **El ZIP entregado omite** `.venv`, `.git` y `asistente.db` para no redistribuir dependencias locales, historial de Git ni posibles datos personales. Crea un entorno virtual y usa `pip install -r requirements.txt`.

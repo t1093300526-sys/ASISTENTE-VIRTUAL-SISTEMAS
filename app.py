@@ -18,6 +18,7 @@ from functools import wraps
 from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 
 import database
+from seguridad import verificar_acceso
 from chatbot import responder
 
 app = Flask(__name__)
@@ -38,9 +39,18 @@ def requiere_admin(vista):
             and hmac.compare_digest((auth.username or "").encode(), usuario.encode())
             and hmac.compare_digest((auth.password or "").encode(), clave.encode())
         )
-        if not ok:
-            return Response("Acceso restringido", 401,
-                            {"WWW-Authenticate": 'Basic realm="Secretaria"'})
+        # El usuario autorizado es el único identificador del panel.
+        # Las peticiones con nombre falso también cuentan contra la cuenta
+        # real para evitar evadir el límite cambiando el nombre de usuario.
+        permitido, espera = verificar_acceso(usuario, ok)
+        if not permitido:
+            if espera:
+                return Response(
+                    "Demasiados intentos. Acceso temporalmente restringido.", 429,
+                    {"Retry-After": str(espera), "Cache-Control": "no-store"})
+            return Response("Credenciales inválidas", 401,
+                            {"WWW-Authenticate": 'Basic realm="Secretaria"',
+                             "Cache-Control": "no-store"})
         return vista(*args, **kwargs)
     return protegida
 
